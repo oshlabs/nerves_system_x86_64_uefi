@@ -23,8 +23,19 @@ atomic A/B firmware updates validated with **kexec** before commit.
   Buildroot's host-cmake. Image assembly + QEMU test run on the host (fwup,
   qemu, edk2-ovmf all present): `buildenv/mkimage.sh` + `buildenv/qemu-test.sh`.
 
-  Next: bake a real Nerves app (mix firmware against this system) and boot to an
-  IEx prompt, then test on the N100 (dd to USB, Secure Boot off).
+  A real Nerves app (mix firmware against this system) **boots to an IEx prompt**
+  under QEMU/OVMF (NVMe): nerves_runtime auto-formats the ext4 app partition (p4),
+  the OTP release starts 38 applications, nerves_pack/vintage_net brings up eth0
+  via DHCP, and IEx is interactive. Platform reports `x86_64_uefi x86_64`.
+
+  Build notes: the Buildroot system must be built in the Debian container with the
+  tree mounted at the SAME path as the host (host tools bake in their build path).
+  Firmware assembly + image run on the host with host OTP pinned to the target's
+  (28.5): ASDF_ERLANG_VERSION=28.5.0.1, source nerves-env.sh, MIX_TARGET=x86_64_uefi,
+  mix firmware && mix firmware.image. Throwaway app: ~/src/nerves/uefi_test.
+
+  Next: test on real N100 hardware (dd to USB, Secure Boot off); confirm igc NICs
+  and iTCO watchdog bind. Then Phase 2 (kexec A/B).
 - Base versions (inherited from the fork): `nerves_system_br` 1.33.7,
   Linux 6.12, musl toolchain.
 - Reference only: `../nerves_system_x86_64_uefi-1.5.1` (Nerves 1.5, Linux 4.18)
