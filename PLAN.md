@@ -280,10 +280,24 @@ failed cold boots.
 - **fwup.conf**: per-slot kernel to ESP + rootfs to the inactive slot + `bootstate`;
   `upgrade.a`/`upgrade.b` target the inactive slot but DO NOT flip `bootstate`
   (the Elixir kexec flow commits). `kexec-tools` already in `nerves_defconfig`.
-- **Elixir TankOS update agent** (user's own code): fwup-to-inactive, kexec, health
-  check, commit. The kexec transition needs a clean quiesce (sync, remount-ro
-  writable bits, stop containers) then `kexec -e` (e.g. an erlinit exit hook or a
-  direct `kexec -e` after `Application.stop`s).
+- **Elixir update-agent library** — its OWN repo + hex package (e.g.
+  `oshlabs/nerves_uefi_ab`), NOT in this system and NOT in TankOS. A Nerves system
+  is a Buildroot/OS definition, not an Elixir app, so it can't host an OTP app; and
+  the logic is infra, not app-specific. Idiomatic like `nerves_runtime`/`vintage_net`
+  (libraries separate from systems and apps). It owns the runtime orchestration:
+  fwup-to-inactive, kexec, validate, commit (flip `bootstate`), watchdog grace. The
+  kexec transition needs a clean quiesce (sync, remount-ro writable bits, stop
+  containers) then `kexec -e` (e.g. an erlinit exit hook or a direct `kexec -e` after
+  `Application.stop`s). TankOS depends on the library and supplies its own
+  health-check (what "validated" means for TankOS).
+
+### Where the code lives (responsibility split)
+
+- **System** (`nerves_system_x86_64_uefi`): OS primitives — `fwup.conf` A/B tasks,
+  chooser packaging, `bootstate` seeding, kexec-tools, partition layout/GUIDs.
+- **Library** (`oshlabs/nerves_uefi_ab`, new): runtime A/B orchestration (above).
+- **`uefi_ab_chooser`** (separate repo, done): the cold-boot selector.
+- **TankOS** (app): depends on the library; provides the firmware health-check.
 
 ### Decisions (locked)
 
@@ -307,8 +321,9 @@ failed cold boots.
 2. **System integration**: Buildroot package for the chooser; `fwup.conf` reworked
    to lay down chooser + `vmlinuz-{a,b}.efi` + `bootstate`, with `upgrade.a`/
    `upgrade.b` writing the inactive slot WITHOUT flipping `bootstate`.
-3. **Elixir update agent** (TankOS, user's code): fwup-to-inactive → quiesce →
-   `kexec -e` into new slot → health-check → commit (flip `bootstate`).
+3. **Elixir update-agent library** (new repo, e.g. `oshlabs/nerves_uefi_ab` — NOT in
+   the system or the app): fwup-to-inactive → quiesce → `kexec -e` into new slot →
+   health-check → commit (flip `bootstate`). TankOS depends on it.
 4. **NVMe `/data`** mount (independent, can land anytime): partition/format NVMe on
    first boot, mount at `/data`.
 5. **Hardware bring-up** of the A/B + kexec + watchdog-rollback loop on the N100.
