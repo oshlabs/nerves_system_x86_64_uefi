@@ -9,14 +9,22 @@ atomic A/B firmware updates validated with **kexec** before commit.
 - Repo: `github.com/oshlabs/nerves_system_x86_64_uefi`, forked from
   `nerves-project/nerves_system_x86_64`.
 - Working branch: `feature/uefi-boot`.
-- **Phase 1 edits applied** (uncommitted), pending a first Buildroot build:
-  GPT+ESP fwup.conf with EFI-stub kernel at `/EFI/BOOT/BOOTX64.EFI`; GRUB removed
-  from defconfig/post-build; kernel defconfig gains EFI_STUB, EFI_PARTITION,
-  NVMe/AHCI/USB-UAS, efifb console, KEXEC, iTCO watchdog, baked CONFIG_CMDLINE,
-  and NIC modules (igc/igb/e1000e/r8169). Platform id renamed `x86_64_uefi`;
-  fixed GPT GUIDs for deterministic PARTUUIDs; single-slot in-place `upgrade`
-  task (true A/B deferred to Phase 2). Verify the critical kernel symbols
-  survived `olddefconfig` after the first build.
+- **Phase 1 COMPLETE and verified booting.** The system builds and boots the
+  full chain under QEMU/OVMF (NVMe disk):
+  `UEFI firmware -> ESP -> /EFI/BOOT/BOOTX64.EFI (EFI-stub kernel) -> NVMe ->
+  GPT PARTUUID -> squashfs root mounted -> init`. All critical kernel symbols
+  survived `olddefconfig` (EFI_STUB, EFI_PARTITION, BLK_DEV_NVME, SATA_AHCI,
+  USB_UAS, FB_EFI, KEXEC_FILE, ITCO_WDT, IGC=m, CONFIG_CMDLINE). erlinit reaches
+  userspace and only stops because the bare system has no Elixir app baked in
+  (expected) and p4 isn't ext4 yet (nerves_runtime would format it).
+
+  Build environment: must build in the Debian-bookworm container
+  (`~/src/nerves/buildenv/`), because the Arch host (GCC 16 / cmake 4.x) breaks
+  Buildroot's host-cmake. Image assembly + QEMU test run on the host (fwup,
+  qemu, edk2-ovmf all present): `buildenv/mkimage.sh` + `buildenv/qemu-test.sh`.
+
+  Next: bake a real Nerves app (mix firmware against this system) and boot to an
+  IEx prompt, then test on the N100 (dd to USB, Secure Boot off).
 - Base versions (inherited from the fork): `nerves_system_br` 1.33.7,
   Linux 6.12, musl toolchain.
 - Reference only: `../nerves_system_x86_64_uefi-1.5.1` (Nerves 1.5, Linux 4.18)
