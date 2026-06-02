@@ -87,3 +87,52 @@ CONFIG_NLS_ISO8859_1=y
 CONFIG_NLS_UTF8=y
 CONFIG_CRYPTO_CRC32C_INTEL=y
 CONFIG_CRYPTO_DEV_VIRTIO=y
+
+#
+# UEFI x86_64 system additions (see PLAN.md)
+#
+
+# Boot directly from UEFI firmware as an EFI application (no bootloader).
+CONFIG_EFI_STUB=y
+CONFIG_RELOCATABLE=y
+
+# Baked-in kernel command line (Phase 1 single-slot: root is slot A).
+# Must match ROOTFS_A_PARTUUID in fwup.conf.
+CONFIG_CMDLINE_BOOL=y
+CONFIG_CMDLINE="root=PARTUUID=b443fbef-b2c1-4dd9-8f4b-00000000000a rootwait console=tty0 console=ttyS0,115200"
+
+# GPT partition parsing (needed to resolve root=PARTUUID on a GPT disk).
+CONFIG_PARTITION_ADVANCED=y
+CONFIG_EFI_PARTITION=y
+
+# Boot-critical storage: built-in so the rootfs is reachable on real hardware.
+CONFIG_BLK_DEV_NVME=y
+CONFIG_SATA_AHCI=y
+CONFIG_ATA_PIIX=y
+CONFIG_USB_XHCI_PCI=y
+CONFIG_USB_UAS=y
+CONFIG_USB_HID=y
+CONFIG_HID_GENERIC=y
+
+# Generic early console on any machine (EFI GOP framebuffer).
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_FB=y
+CONFIG_FB_EFI=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+
+# kexec for the Phase 2 update/validate/commit flow.
+CONFIG_KEXEC=y
+CONFIG_KEXEC_FILE=y
+
+# Intel chipset (iTCO) watchdog - the rollback linchpin in Phase 2.
+CONFIG_ITCO_WDT=y
+CONFIG_ITCO_VENDOR_SUPPORT=y
+
+# NICs as modules in the squashfs (networking starts after root mounts).
+# igc = Intel I225/I226 2.5GbE (the test N100's ports). Others widen "generic".
+CONFIG_NET_VENDOR_INTEL=y
+CONFIG_IGC=m
+CONFIG_IGB=m
+CONFIG_E1000E=m
+CONFIG_R8169=m

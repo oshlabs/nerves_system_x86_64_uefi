@@ -39,11 +39,12 @@ BR2_PACKAGE_UNIXODBC=y
 BR2_PACKAGE_LIBMNL=y
 BR2_PACKAGE_LIBNL=y
 # BR2_TARGET_ROOTFS_TAR is not set
-BR2_TARGET_GRUB2=y
-BR2_TARGET_GRUB2_BUILTIN_MODULES_PC="boot linux ext2 squash4 fat part_msdos normal biosdisk loadenv echo true test sleep"
-BR2_TARGET_GRUB2_INSTALL_TOOLS=y
+# No bootloader: the kernel is built with CONFIG_EFI_STUB=y and booted directly
+# by UEFI firmware from the ESP at /EFI/BOOT/BOOTX64.EFI. See PLAN.md.
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
-BR2_NERVES_SYSTEM_NAME="nerves_system_x86_64"
+# kexec-tools for the Phase 2 kexec-based A/B update/validate/commit flow.
+BR2_PACKAGE_KEXEC=y
+BR2_NERVES_SYSTEM_NAME="nerves_system_x86_64_uefi"
 BR2_NERVES_ADDITIONAL_IMAGE_FILES="${NERVES_DEFCONFIG_DIR}/fwup.conf"
 BR2_PACKAGE_NBTTY=y
 BR2_PACKAGE_NERVES_CONFIG=y

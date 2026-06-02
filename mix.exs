@@ -1,8 +1,8 @@
-defmodule NervesSystemX8664.MixProject do
+defmodule NervesSystemX8664Uefi.MixProject do
   use Mix.Project
 
-  @github_organization "nerves-project"
-  @app :nerves_system_x86_64
+  @github_organization "oshlabs"
+  @app :nerves_system_x86_64_uefi
   @source_url "https://github.com/#{@github_organization}/#{@app}"
   @version Path.join(__DIR__, "VERSION")
            |> File.read!()
@@ -74,7 +74,7 @@ defmodule NervesSystemX8664.MixProject do
 
   defp description do
     """
-    Nerves System - x86_64
+    Nerves System - x86_64 UEFI (EFI-stub boot, generic hardware)
     """
   end
 
@@ -107,7 +107,6 @@ defmodule NervesSystemX8664.MixProject do
       "CHANGELOG.md",
       "fwup-ops.conf",
       "fwup.conf",
-      "grub.cfg",
       "LICENSES/*",
       "linux-6.12.defconfig",
       "mix.exs",

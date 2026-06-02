@@ -1,12 +1,20 @@
-# Generic x86_64 System
+# Generic x86_64 UEFI System
 
-[![Hex version](https://img.shields.io/hexpm/v/nerves_system_x86_64.svg "Hex version")](https://hex.pm/packages/nerves_system_x86_64)
-[![CI](https://github.com/nerves-project/nerves_system_x86_64/actions/workflows/ci.yml/badge.svg)](https://github.com/nerves-project/nerves_system_x86_64/actions/workflows/ci.yml)
-[![REUSE status](https://api.reuse.software/badge/github.com/nerves-project/nerves_system_x86_64)](https://api.reuse.software/info/github.com/nerves-project/nerves_system_x86_64)
+This is a Nerves System for generic x86_64 hardware that boots via **UEFI**
+without a bootloader: the kernel is built with `CONFIG_EFI_STUB=y` and launched
+directly by firmware from the EFI System Partition at `/EFI/BOOT/BOOTX64.EFI`.
+The image uses a GPT partition table and is `dd`-able to a USB stick or internal
+disk. It is a fork of
+[`nerves-project/nerves_system_x86_64`](https://github.com/nerves-project/nerves_system_x86_64)
+adapted for UEFI boot on real hardware.
 
-This is the base Nerves System configuration for a generic x86_64 system that
-can be run with Qemu. It can be used as a base for real x86_64 systems, but it
-probably will require some work.
+See [`PLAN.md`](PLAN.md) for the full design (GPT/ESP layout, kexec-based A/B
+update, the `uefi_ab_chooser`) and the phased roadmap. This is currently at
+**Phase 1: single-slot boot**.
+
+> Status: in development on the `feature/uefi-boot` branch. First test target is
+> an Intel N100 mini PC (onboard NVMe, Intel I226 NICs). Secure Boot must be
+> disabled.
 
 | Feature              | Description                     |
 | -------------------- | ------------------------------- |
