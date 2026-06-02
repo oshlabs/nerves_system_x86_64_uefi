@@ -11,9 +11,10 @@ set -e
 # its modules) for the Phase 2 kexec warm-update path.
 
 # Seed the chooser's bootstate into the images dir so fwup.conf can write it to
-# the ESP at /EFI/nerves/bootstate. A fresh install cold-boots slot A; the
-# Elixir update-agent rewrites this file at commit time to flip A<->B.
-printf 'active=a\nvalidated=1\n' > $BINARIES_DIR/bootstate
+# the ESP at /EFI/nerves/bootstate. A fresh install cold-boots slot A (no trial
+# in flight). During an update uefi_ab_agent adds try=/try_count=, the chooser
+# counts attempts, and the agent promotes try->active on validation (Option B).
+printf 'active=a\n' > $BINARIES_DIR/bootstate
 
 # Create the fwup ops script to handle runtime operations (factory-reset,
 # validate, status). revert.fw is a backwards-compatible alias.

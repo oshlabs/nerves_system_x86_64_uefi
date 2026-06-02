@@ -223,7 +223,7 @@ This removes UKI tooling — kernels are the Buildroot `bzImage` as-is.
 /EFI/BOOT/BOOTX64.EFI       <- uefi_ab_chooser (read-only)
 /EFI/nerves/vmlinuz-a.efi   <- slot A kernel (bare EFI-stub bzImage)
 /EFI/nerves/vmlinuz-b.efi   <- slot B kernel
-/EFI/nerves/bootstate       <- tiny: active=a|b, validated (Phase 3 adds counters)
+/EFI/nerves/bootstate       <- active=<a|b> [+ try=<a|b> + try_count=<n> during a trial] (Option B)
 ```
 
 ### Partition layout
@@ -301,8 +301,21 @@ failed cold boots.
 
 ### Decisions (locked)
 
-1. **A/B strategy**: kexec **validate-before-commit** (Strategy 2). The boot-attempt
-   counter (for committed-slot corruption) is a Phase 3 add, not now.
+1. **A/B strategy → REVISED to Option B (boot-counting chooser + normal reboot).**
+   *Supersedes the kexec model described throughout this Phase-2 section (kept below
+   for history).* Update flow: `fwup` writes the inactive slot (no commit); the agent
+   marks it `try=<slot>` in `bootstate` and the box does a **normal reboot** (no
+   kexec); the **chooser counts boot attempts** and reverts to `active` after a limit;
+   on health, the agent promotes `try`→`active`. Rationale: kexec is the *abrupt*
+   primitive (it abandons running processes/containers), so it fights the requirement
+   to **gracefully drain containers** before going down — a normal reboot is the
+   graceful primitive (erlinit/BEAM shutdown). Graceful container drain is a **TankOS
+   shutdown hook**, independent of the updater, so *every* reboot is graceful. This
+   pushes the rollback smarts into the chooser (now a *writing* boot-counter) to keep
+   the Elixir agent tiny — the mainline Nerves model (u-boot `bootcount`/`bootlimit` +
+   `nerves_fw_validated`), relocated into our chooser. Cost accepted: the chooser is no
+   longer read-only (writes only mid-trial → small FAT-write window). `kexec-tools` /
+   `CONFIG_KEXEC_FILE` are now unused (later cleanup).
 2. **Storage**: **Option X** — NVMe is a decoupled `/data` volume; the A/B mechanism
    on USB is unchanged.
 3. **cmdline**: **bare kernels** + chooser-supplied LoadOptions. NOT UKIs.
@@ -337,12 +350,22 @@ failed cold boots.
    Cosmetic todo (integration): builtin `CONFIG_CMDLINE` root= is appended to the
    chooser's LoadOptions (doubled `root=`, last wins → correct slot); empty the
    builtin root= to clean it up.
-3. **Elixir update-agent library** (new repo, e.g. `oshlabs/uefi_ab_agent` — NOT in
-   the system or the app): fwup-to-inactive → quiesce → `kexec -e` into new slot →
-   health-check → commit (flip `bootstate`). TankOS depends on it.
+3. **Option B implementation** (revised — no kexec):
+   a. **Chooser boot-counting** (`uefi_ab_chooser`): read `active`/`try`/`try_count`;
+      if `try` set and `try_count < LIMIT` (default 3) → `try_count++`, write bootstate,
+      boot `try`; if `try_count >= LIMIT` → clear `try`, write bootstate, boot `active`
+      (rollback); else boot `active` (no write). Per-slot LoadOptions unchanged.
+   b. **`uefi_ab_agent`** (`oshlabs/uefi_ab_agent`, Elixir lib): `apply_update/2`
+      (`fwup -t upgrade` → inactive slot, then write `try=<slot>`, caller reboots),
+      `status/0` (:steady | {:trial, slot}), `validate/0` (promote `try`→`active`),
+      `revert/0`. Mirrors Nerves' `validate_firmware`. TankOS depends on it.
+   c. **System tweak**: seed `bootstate` as `active=a` (drop `validated=`). `kexec-tools`
+      / `CONFIG_KEXEC_FILE` now unused (drop later).
+   d. **TankOS shutdown hook** (not in these repos): graceful container drain on any
+      reboot (erlinit pre-shutdown / Tank drain), so the agent stays container-agnostic.
 4. **NVMe `/data`** mount (independent, can land anytime): partition/format NVMe on
    first boot, mount at `/data`.
-5. **Hardware bring-up** of the A/B + kexec + watchdog-rollback loop on the N100.
+5. **Hardware bring-up** of the A/B + boot-counting rollback loop on the N100.
 
 ## Open items / risks
 
