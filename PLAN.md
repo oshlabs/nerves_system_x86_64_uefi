@@ -175,14 +175,16 @@ squashfs is compressed, so a large module tree is cheap.
 
 ## Phased roadmap
 
-| Phase | Boot path | A/B | Scope |
-|-------|-----------|-----|-------|
-| **1 — first boot** | `BOOTX64.EFI` = EFI-stub kernel, cmdline via `CONFIG_CMDLINE` | none (single slot) | GPT/ESP in fwup.conf; kernel EFI_STUB + NVMe/USB/KEXEC/WDT built-in; strip GRUB from defconfig/post-build; rebrand |
-| **2 — kexec update** | same | warm A/B via kexec; cold boot picks committed slot | kexec-tools, UKI per slot on ESP, fwup A/B tasks, watchdog + validate/commit in Elixir |
-| **3 — chooser** | `BOOTX64.EFI` = `uefi_ab_chooser` → UKI A/B | atomic cold-boot selection | build & integrate the separate chooser repo |
+| Phase | Boot path | A/B | Scope | Status |
+|-------|-----------|-----|-------|--------|
+| **1 — first boot** | `BOOTX64.EFI` = EFI-stub kernel, baked `CONFIG_CMDLINE` | none (single slot) | GPT/ESP, EFI_STUB, NVMe/USB built-in, no GRUB | ✅ DONE, hardware-verified (N100, USB2) |
+| **2 — A/B via kexec + chooser** | `BOOTX64.EFI` = `uefi_ab_chooser` → per-slot bare kernel, cmdline via LoadOptions | warm A/B via kexec (validate-before-commit); atomic commit via `bootstate` flip; cold boot picks committed slot | chooser repo, fwup A/B tasks, bootstate, Elixir update/validate/commit agent, watchdog rollback | design pass (this section) |
+| **3 — hardening** | same | + boot-attempt counters (writing chooser) for committed-slot-corruption rollback | signing/shim, USB4/Linux-7.0 experiment, split_lock knob | later |
 
-Phase-1 layout (GPT + ESP + kernel-on-ESP) is forward-compatible with Phases 2–3;
-single-slot now costs no rework.
+NOTE: the chooser is folded into **Phase 2** (was Phase 3). It makes the commit
+atomic (flip `bootstate`, not a multi-MB kernel swap) AND supplies the per-slot
+cmdline, which removes the need for per-slot UKIs. Phase-1 layout is forward-
+compatible; single-slot cost no rework.
 
 ## Phase 1 — concrete file changes (in this repo)
 
@@ -197,6 +199,102 @@ single-slot now costs no rework.
   EFI-stub kernel onto the ESP image.
 - `grub.cfg`: delete.
 - `mix.exs` / `VERSION` / `README.md`: rebrand to `nerves_system_x86_64_uefi`.
+
+## Phase 2 design — A/B via kexec + the cold-boot chooser
+
+Supersedes the earlier "Phase 2 = fwup-swap, Phase 3 = chooser" split. The chooser
+is built in Phase 2 because it makes commit atomic and supplies the per-slot cmdline.
+
+### Boot/cmdline model (refined — no UKIs)
+
+One bare EFI-stub `bzImage` per slot on the ESP. The cmdline (incl.
+`root=PARTUUID=<slot>`) is supplied by whoever launches the kernel, so the kernels
+need no per-slot baking:
+- **cold boot**: the chooser sets EFI **LoadOptions** to the active slot's cmdline.
+- **warm update**: `kexec --append` sets it.
+- builtin `CONFIG_CMDLINE` keeps common params + a fallback `root=<A>` for direct/
+  recovery boot. The launcher's `root=` overrides it (last `root=` on the line wins).
+
+This removes UKI tooling — kernels are the Buildroot `bzImage` as-is.
+
+### ESP layout (Phase 2)
+
+```
+/EFI/BOOT/BOOTX64.EFI       <- uefi_ab_chooser (read-only)
+/EFI/nerves/vmlinuz-a.efi   <- slot A kernel (bare EFI-stub bzImage)
+/EFI/nerves/vmlinuz-b.efi   <- slot B kernel
+/EFI/nerves/bootstate       <- tiny: active=a|b, validated (Phase 3 adds counters)
+```
+
+### Partition layout
+
+USB stick (the OS, always boots+runs here):
+```
+p1 ESP (FAT)        - chooser + per-slot kernels + bootstate (shared, not A/B)
+p2 rootfs A (squashfs)
+p3 rootfs B (squashfs)
+p4 app-state (ext4) - nerves_runtime /root (shared; survives A/B updates)
+```
+NVMe = separate large data volume (container images, config, app data), mounted at
+`/data`. **Option X (recommended): keep it decoupled** — the app/system mounts the
+NVMe; the A/B mechanism is unchanged. Option Y (move `/root` to NVMe, shrink USB to
+ESP+A/B) is possible later but couples storage to the A/B work.
+
+### Update / validate / commit (kexec — "Strategy 2")
+
+```
+running committed slot A
+  -> fwup writes update to INACTIVE slot B: rootfs->p3, kernel->/EFI/nerves/vmlinuz-b.efi
+     (bootstate UNCHANGED; active still A)
+  -> quiesce (sync, stop containers/app), pet WDT, then:
+       kexec -s -l vmlinuz-b.efi --append "root=PARTUUID=<B> ..." ; <clean stop> ; kexec -e
+     (jumps into B, no firmware POST)
+  -> B boots, Elixir health-checks
+       healthy -> COMMIT: flip bootstate active->B (atomic-ish FAT write). Cold boot now = B.
+       fail/panic/hang -> iTCO watchdog (unpet) resets -> cold boot -> chooser reads
+         bootstate (active still A) -> boots A. Rollback; no commit ever happened.
+```
+
+The hardware watchdog (confirmed working: iTCO + nerves_heart, 60s/50s) is the
+rollback linchpin. Pet it right before kexec so B gets a full window to boot+
+validate; set the nerves_heart grace period to cover B's boot time.
+
+### The chooser — `github.com/oshlabs/uefi_ab_chooser`
+
+gnu-efi C, ~100 lines, **read-only** in Phase 2:
+1. LoadedImage -> booted device -> SimpleFileSystem (the ESP).
+2. Read `/EFI/nerves/bootstate` -> active slot.
+3. LoadImage `/EFI/nerves/vmlinuz-<active>.efi`.
+4. Set LoadOptions = `root=PARTUUID=<active-guid> rootwait console=... ` (UTF-16).
+5. StartImage.
+
+Read-only is safe here because **commit only happens after kexec validation**, so
+`active` is always a validated slot — the chooser never boots an unvalidated slot.
+The residual gap (a *committed* slot later corrupting) is Phase 3: a writing chooser
+that decrements a boot-attempt counter and falls back to the other slot after N
+failed cold boots.
+
+### Build / code impacts
+
+- **chooser repo** (gnu-efi C) -> Buildroot package -> fwup writes it to the ESP.
+- **fwup.conf**: per-slot kernel to ESP + rootfs to the inactive slot + `bootstate`;
+  `upgrade.a`/`upgrade.b` target the inactive slot but DO NOT flip `bootstate`
+  (the Elixir kexec flow commits). `kexec-tools` already in `nerves_defconfig`.
+- **Elixir TankOS update agent** (user's own code): fwup-to-inactive, kexec, health
+  check, commit. The kexec transition needs a clean quiesce (sync, remount-ro
+  writable bits, stop containers) then `kexec -e` (e.g. an erlinit exit hook or a
+  direct `kexec -e` after `Application.stop`s).
+
+### Open decisions (resolve before implementing)
+
+1. **A/B strategy**: kexec validate-before-commit (Strategy 2, your stated
+   preference) vs traditional reboot + chooser boot-counter (Strategy 1) vs hybrid
+   (kexec normally + boot-counter safety net). Recommend Strategy 2 now, add the
+   boot-counter in Phase 3 as the committed-slot-corruption net.
+2. **Storage**: NVMe as a decoupled `/data` mount (Option X, recommend) vs move
+   `/root` to NVMe (Option Y).
+3. **cmdline**: chooser LoadOptions + bare kernels (recommend) vs per-slot UKIs.
+4. **Build the chooser now** (fold into Phase 2) — recommend yes.
 
 ## Open items / risks
 
