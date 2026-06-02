@@ -99,7 +99,7 @@ CONFIG_RELOCATABLE=y
 # Baked-in kernel command line (Phase 1 single-slot: root is slot A).
 # Must match ROOTFS_A_PARTUUID in fwup.conf.
 CONFIG_CMDLINE_BOOL=y
-CONFIG_CMDLINE="root=PARTUUID=b443fbef-b2c1-4dd9-8f4b-00000000000a rootwait console=tty0 console=ttyS0,115200"
+CONFIG_CMDLINE="root=PARTUUID=b443fbef-b2c1-4dd9-8f4b-00000000000a rootwait console=tty0 console=ttyS0,115200 split_lock_detect=off"
 
 # GPT partition parsing (needed to resolve root=PARTUUID on a GPT disk).
 CONFIG_PARTITION_ADVANCED=y
@@ -110,7 +110,11 @@ CONFIG_BLK_DEV_NVME=y
 CONFIG_SATA_AHCI=y
 CONFIG_ATA_PIIX=y
 CONFIG_USB_XHCI_PCI=y
-CONFIG_USB_UAS=y
+# UAS (USB Attached SCSI) intentionally disabled: some USB3 sticks have buggy UAS
+# firmware that fails to enumerate (stuck at "Waiting for root device" on a USB3
+# port). Without UAS, all USB mass storage uses usb-storage/BOT at the negotiated
+# link speed (still SuperSpeed on USB3) - maximally compatible for USB boot.
+# CONFIG_USB_UAS is not set
 CONFIG_USB_HID=y
 CONFIG_HID_GENERIC=y
 
