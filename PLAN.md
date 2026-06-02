@@ -285,16 +285,33 @@ failed cold boots.
   writable bits, stop containers) then `kexec -e` (e.g. an erlinit exit hook or a
   direct `kexec -e` after `Application.stop`s).
 
-### Open decisions (resolve before implementing)
+### Decisions (locked)
 
-1. **A/B strategy**: kexec validate-before-commit (Strategy 2, your stated
-   preference) vs traditional reboot + chooser boot-counter (Strategy 1) vs hybrid
-   (kexec normally + boot-counter safety net). Recommend Strategy 2 now, add the
-   boot-counter in Phase 3 as the committed-slot-corruption net.
-2. **Storage**: NVMe as a decoupled `/data` mount (Option X, recommend) vs move
-   `/root` to NVMe (Option Y).
-3. **cmdline**: chooser LoadOptions + bare kernels (recommend) vs per-slot UKIs.
-4. **Build the chooser now** (fold into Phase 2) — recommend yes.
+1. **A/B strategy**: kexec **validate-before-commit** (Strategy 2). The boot-attempt
+   counter (for committed-slot corruption) is a Phase 3 add, not now.
+2. **Storage**: **Option X** — NVMe is a decoupled `/data` volume; the A/B mechanism
+   on USB is unchanged.
+3. **cmdline**: **bare kernels** + chooser-supplied LoadOptions. NOT UKIs.
+4. **Chooser**: built **now** (in Phase 2).
+5. **Secure Boot**: deferred. If it ever lands, the non-destructive pivot is to swap
+   the bare per-slot kernels for per-slot **UKIs** that the chooser picks-and-launches
+   (cmdline from the UKI's signed `.cmdline`); chooser + bootstate + kexec all stay,
+   and kexec keeps loading the bare `bzImage` from the squashfs.
+
+### Phase 2 build order (proposed)
+
+1. **`uefi_ab_chooser` repo** (gnu-efi C, read-only): LoadedImage → ESP FS → read
+   `bootstate` → LoadImage `vmlinuz-<active>.efi` → set LoadOptions `root=…` →
+   StartImage. Test standalone in QEMU/OVMF against a hand-built ESP before wiring
+   into the system.
+2. **System integration**: Buildroot package for the chooser; `fwup.conf` reworked
+   to lay down chooser + `vmlinuz-{a,b}.efi` + `bootstate`, with `upgrade.a`/
+   `upgrade.b` writing the inactive slot WITHOUT flipping `bootstate`.
+3. **Elixir update agent** (TankOS, user's code): fwup-to-inactive → quiesce →
+   `kexec -e` into new slot → health-check → commit (flip `bootstate`).
+4. **NVMe `/data`** mount (independent, can land anytime): partition/format NVMe on
+   first boot, mount at `/data`.
+5. **Hardware bring-up** of the A/B + kexec + watchdog-rollback loop on the N100.
 
 ## Open items / risks
 
