@@ -178,7 +178,7 @@ squashfs is compressed, so a large module tree is cheap.
 | Phase | Boot path | A/B | Scope | Status |
 |-------|-----------|-----|-------|--------|
 | **1 — first boot** | `BOOTX64.EFI` = EFI-stub kernel, baked `CONFIG_CMDLINE` | none (single slot) | GPT/ESP, EFI_STUB, NVMe/USB built-in, no GRUB | ✅ DONE, hardware-verified (N100, USB2) |
-| **2 — A/B via kexec + chooser** | `BOOTX64.EFI` = `uefi_ab_chooser` → per-slot bare kernel, cmdline via LoadOptions | warm A/B via kexec (validate-before-commit); atomic commit via `bootstate` flip; cold boot picks committed slot | chooser repo, fwup A/B tasks, bootstate, Elixir update/validate/commit agent, watchdog rollback | design pass (this section) |
+| **2 — A/B via kexec + chooser** | `BOOTX64.EFI` = `uefi_ab_chooser` → per-slot bare kernel, cmdline via LoadOptions | warm A/B via kexec (validate-before-commit); atomic commit via `bootstate` flip; cold boot picks committed slot | chooser repo, fwup A/B tasks, bootstate, Elixir update/validate/commit agent, watchdog rollback | steps 1+2 ✅ (chooser + system integration, QEMU-verified both slots); steps 3-5 todo |
 | **3 — hardening** | same | + boot-attempt counters (writing chooser) for committed-slot-corruption rollback | signing/shim, USB4/Linux-7.0 experiment, split_lock knob | later |
 
 NOTE: the chooser is folded into **Phase 2** (was Phase 3). It makes the commit
@@ -281,7 +281,7 @@ failed cold boots.
   `upgrade.a`/`upgrade.b` target the inactive slot but DO NOT flip `bootstate`
   (the Elixir kexec flow commits). `kexec-tools` already in `nerves_defconfig`.
 - **Elixir update-agent library** — its OWN repo + hex package (e.g.
-  `oshlabs/nerves_uefi_ab`), NOT in this system and NOT in TankOS. A Nerves system
+  `oshlabs/uefi_ab_agent`), NOT in this system and NOT in TankOS. A Nerves system
   is a Buildroot/OS definition, not an Elixir app, so it can't host an OTP app; and
   the logic is infra, not app-specific. Idiomatic like `nerves_runtime`/`vintage_net`
   (libraries separate from systems and apps). It owns the runtime orchestration:
@@ -295,7 +295,7 @@ failed cold boots.
 
 - **System** (`nerves_system_x86_64_uefi`): OS primitives — `fwup.conf` A/B tasks,
   chooser packaging, `bootstate` seeding, kexec-tools, partition layout/GUIDs.
-- **Library** (`oshlabs/nerves_uefi_ab`, new): runtime A/B orchestration (above).
+- **Library** (`oshlabs/uefi_ab_agent`, new): runtime A/B orchestration (above).
 - **`uefi_ab_chooser`** (separate repo, done): the cold-boot selector.
 - **TankOS** (app): depends on the library; provides the firmware health-check.
 
@@ -318,10 +318,26 @@ failed cold boots.
    `bootstate` → LoadImage `vmlinuz-<active>.efi` → set LoadOptions `root=…` →
    StartImage. Test standalone in QEMU/OVMF against a hand-built ESP before wiring
    into the system.
-2. **System integration**: Buildroot package for the chooser; `fwup.conf` reworked
-   to lay down chooser + `vmlinuz-{a,b}.efi` + `bootstate`, with `upgrade.a`/
-   `upgrade.b` writing the inactive slot WITHOUT flipping `bootstate`.
-3. **Elixir update-agent library** (new repo, e.g. `oshlabs/nerves_uefi_ab` — NOT in
+2. **System integration** ✅ DONE (QEMU-verified). Buildroot package
+   `package/uefi-ab-chooser` (SITE_METHOD=local → sibling `../uefi_ab_chooser`
+   during bring-up; pin to a github ref before release) selects `gnu-efi`, cross-
+   builds `bootx64.efi`, installs it to the images dir as `chooser.efi`.
+   `external.mk` + `Config.in` source line + `BR2_PACKAGE_UEFI_AB_CHOOSER=y` wire
+   it in. `fwup.conf` reworked: `complete` lays down chooser→`/EFI/BOOT/BOOTX64.EFI`,
+   kernel→`/EFI/nerves/vmlinuz-{a,b}.efi` (fat_write A then fat_cp to B — fwup
+   streams a resource once), `bootstate`→`/EFI/nerves/bootstate` (seeded
+   `active=a` by post-build.sh). `upgrade.a`/`upgrade.b` write only the inactive
+   slot's rootfs+kernel and DO NOT flip `nerves_fw_active` or `bootstate` (the
+   Elixir agent commits). QEMU/OVMF: bootstate=a→slot A mounts+inits; bootstate=b
+   →slot B cmdline, panics (B rootfs empty on fresh install — correct).
+   Gotcha fixed: the chooser Makefile's `objcopy` dropped `.rodata`, so the
+   cross build (gnu-efi 4.0.0 keeps `.rodata` separate, unlike the Debian build)
+   shipped a PE with garbage path/cmdline strings → both slots failed to load.
+   Added `-j .rodata -j .rodata.*`.
+   Cosmetic todo (integration): builtin `CONFIG_CMDLINE` root= is appended to the
+   chooser's LoadOptions (doubled `root=`, last wins → correct slot); empty the
+   builtin root= to clean it up.
+3. **Elixir update-agent library** (new repo, e.g. `oshlabs/uefi_ab_agent` — NOT in
    the system or the app): fwup-to-inactive → quiesce → `kexec -e` into new slot →
    health-check → commit (flip `bootstate`). TankOS depends on it.
 4. **NVMe `/data`** mount (independent, can land anytime): partition/format NVMe on

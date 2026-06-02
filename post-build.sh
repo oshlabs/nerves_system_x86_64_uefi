@@ -2,11 +2,18 @@
 
 set -e
 
-# No bootloader: UEFI firmware boots the EFI-stub kernel directly from the ESP.
-# The kernel (bzImage, a valid PE/COFF UEFI app thanks to CONFIG_EFI_STUB=y) is
-# left in $BINARIES_DIR/bzImage by Buildroot and written to /EFI/BOOT/BOOTX64.EFI
-# by fwup.conf. It also stays in the rootfs at /boot/bzImage (bundled with its
-# modules) for the Phase 2 kexec path.
+# No bootloader/GRUB. UEFI firmware boots the uefi_ab_chooser from the ESP
+# fallback path /EFI/BOOT/BOOTX64.EFI (installed by its Buildroot package into
+# $BINARIES_DIR/chooser.efi). The chooser reads bootstate and starts the active
+# slot's kernel /EFI/nerves/vmlinuz-<slot>.efi (the bzImage, a valid PE/COFF EFI
+# app thanks to CONFIG_EFI_STUB=y), supplying root=PARTUUID=<slot> via
+# LoadOptions. The kernel also stays in the rootfs at /boot/bzImage (bundled with
+# its modules) for the Phase 2 kexec warm-update path.
+
+# Seed the chooser's bootstate into the images dir so fwup.conf can write it to
+# the ESP at /EFI/nerves/bootstate. A fresh install cold-boots slot A; the
+# Elixir update-agent rewrites this file at commit time to flip A<->B.
+printf 'active=a\nvalidated=1\n' > $BINARIES_DIR/bootstate
 
 # Create the fwup ops script to handle runtime operations (factory-reset,
 # validate, status). revert.fw is a backwards-compatible alias.

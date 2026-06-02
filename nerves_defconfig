@@ -44,6 +44,8 @@ BR2_PACKAGE_LIBNL=y
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
 # kexec-tools for the Phase 2 kexec-based A/B update/validate/commit flow.
 BR2_PACKAGE_KEXEC=y
+# Cold-boot A/B selector installed at /EFI/BOOT/BOOTX64.EFI (selects gnu-efi).
+BR2_PACKAGE_UEFI_AB_CHOOSER=y
 BR2_NERVES_SYSTEM_NAME="nerves_system_x86_64_uefi"
 BR2_NERVES_ADDITIONAL_IMAGE_FILES="${NERVES_DEFCONFIG_DIR}/fwup.conf"
 BR2_PACKAGE_NBTTY=y

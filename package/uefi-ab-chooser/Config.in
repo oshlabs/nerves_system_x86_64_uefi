@@ -1,0 +1,16 @@
+config BR2_PACKAGE_UEFI_AB_CHOOSER
+	bool "uefi-ab-chooser"
+	depends on BR2_x86_64
+	select BR2_PACKAGE_GNU_EFI
+	help
+	  Minimal, read-only UEFI A/B boot selector for this system.
+
+	  Installed on the ESP at /EFI/BOOT/BOOTX64.EFI. It reads the
+	  active slot from /EFI/nerves/bootstate and starts the matching
+	  per-slot kernel (/EFI/nerves/vmlinuz-{a,b}.efi), passing the
+	  slot's root=PARTUUID via EFI LoadOptions.
+
+	  https://github.com/oshlabs/uefi_ab_chooser
+
+comment "uefi-ab-chooser needs an x86_64 target"
+	depends on !BR2_x86_64
