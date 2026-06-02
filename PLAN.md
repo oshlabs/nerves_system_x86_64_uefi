@@ -164,7 +164,7 @@ Built-in (`=y`) — must be present to reach the rootfs on generic hardware:
 - `xhci-hcd`, `ehci-hcd`, `usb-storage`, `uas` (USB-stick boot + recovery)
 - `CONFIG_SQUASHFS`, `CONFIG_VFAT_FS`, `CONFIG_EXT4_FS`
 - `efifb` / `simpledrm` (console on any machine)
-- `CONFIG_KEXEC_FILE`, watchdog driver(s)
+- watchdog driver(s)
 
 Modules (`=m`) in squashfs — everything else, widened toward distro-generic over
 time:
@@ -359,8 +359,11 @@ failed cold boots.
       (`fwup -t upgrade` → inactive slot, then write `try=<slot>`, caller reboots),
       `status/0` (:steady | {:trial, slot}), `validate/0` (promote `try`→`active`),
       `revert/0`. Mirrors Nerves' `validate_firmware`. TankOS depends on it.
-   c. **System tweak**: seed `bootstate` as `active=a` (drop `validated=`). `kexec-tools`
-      / `CONFIG_KEXEC_FILE` now unused (drop later).
+   c. **System tweaks** ✅: seed `bootstate` as `active=a`; removed `kexec-tools`
+      (`BR2_PACKAGE_KEXEC`) + `CONFIG_KEXEC`/`KEXEC_FILE` (now unused); split the cold-
+      boot cmdline so the builtin `CONFIG_CMDLINE` holds the common params
+      (`console=`/`split_lock_detect=`) and the chooser supplies only per-slot
+      `root=…rootwait` — no more doubled `root=`. QEMU-verified clean + boots.
    d. **TankOS shutdown hook** (not in these repos): graceful container drain on any
       reboot (erlinit pre-shutdown / Tank drain), so the agent stays container-agnostic.
 4. **NVMe `/data`** mount (independent, can land anytime): partition/format NVMe on
@@ -371,7 +374,7 @@ failed cold boots.
 
 - **Secure Boot** must be OFF (unsigned kernel/chooser). Signing via `shim` is a
   far-later concern.
-- Watchdog selection on the N100 (iTCO vs. SoC WDT) — verify the right driver.
-- kexec interrupts the running BEAM (faster reboot, not a live update).
+- `split_lock_detect=off` is "Unknown ... passed to user space" in this kernel
+  config — ineffective; revisit the right knob (low priority, no crashes seen).
 - "Generic on any hardware" is an ongoing widening of the module set, not a
   one-shot config.
