@@ -10,11 +10,17 @@ set -e
 # LoadOptions. The kernel also stays in the rootfs at /boot/bzImage (bundled with
 # its modules) for the Phase 2 kexec warm-update path.
 
-# Seed the chooser's bootstate into the images dir so fwup.conf can write it to
-# the ESP at /EFI/nerves/bootstate. A fresh install cold-boots slot A (no trial
-# in flight). During an update uefi_ab_agent adds try=/try_count=, the chooser
-# counts attempts, and the agent promotes try->active on validation (Option B).
+# Seed the chooser's bootstate files into the images dir so fwup.conf can write
+# them to the ESP at /EFI/nerves/bootstate (Option B):
+#   bootstate        - a fresh install: cold-boot slot A, no trial in flight.
+#   bootstate-try-a  - written by `upgrade.a` (running B): start a trial of A.
+#   bootstate-try-b  - written by `upgrade.b` (running A): start a trial of B.
+# Starting a trial is what makes `fwup -t upgrade` (and so `mix firmware.upload`)
+# boot the freshly-written slot. The chooser counts attempts and reverts to
+# `active` on failure; uefi_ab_agent promotes try->active on validation.
 printf 'active=a\n' > $BINARIES_DIR/bootstate
+printf 'active=b\ntry=a\ntry_count=0\n' > $BINARIES_DIR/bootstate-try-a
+printf 'active=a\ntry=b\ntry_count=0\n' > $BINARIES_DIR/bootstate-try-b
 
 # Create the fwup ops script to handle runtime operations (factory-reset,
 # validate, status). revert.fw is a backwards-compatible alias.
