@@ -2,7 +2,9 @@
 
 A Nerves 2.0+ system for x86_64 that boots via **UEFI** (no GRUB), runs from a
 `dd`'d USB stick or onboard disk, aims to be **hardware-generic**, and does
-atomic A/B firmware updates validated with **kexec** before commit.
+atomic A/B firmware updates with **boot-counting rollback** (the trial slot is
+validated after a normal reboot; the earlier kexec-validation design was
+abandoned — see "Option B / PLAN pivot to boot-counting" in the git history).
 
 ## Status
 
@@ -172,6 +174,48 @@ time:
   other NICs, GPU (i915/Xe), sound, Wi-Fi, USB peripherals, …
 
 squashfs is compressed, so a large module tree is cheap.
+
+## Image size & partition sizing (decided — keep the headroom)
+
+The provisioned `.img` is **~870 MiB** (`fwup`'s `raw_memset` of the last app
+block forces the file to full disk length for QEMU). That size is the **sum of
+the fixed partition allocations**, NOT the payload:
+
+| Partition | Size | Used today |
+|---|---|---|
+| p1 ESP (FAT) | 100 MiB | chooser 53 KB + 2× bzImage (~5 MB each) ≈ 10 MB |
+| p2 rootfs A (squashfs) | 256 MiB | 13 MB |
+| p3 rootfs B (squashfs) | 256 MiB | 13 MB (same image) |
+| p4 app-data (ext4) | 256 MiB min, `expand=true` | empty (formatted on first boot) |
+
+So ~868 MiB of allocation holds ~35 MiB of real data. **This is not a problem
+and the layout is deliberately NOT shrunk**, for two reasons:
+
+1. **Distribution cost is ~zero.** The empty space is zeros — `gzip` takes the
+   871 MiB image down to **~24 MiB**. Distribute compressed; the on-disk overhead
+   never travels.
+2. **The headroom is real, not waste.** The rootfs is minimal *today* (musl +
+   busybox + erlinit + the BEAM = 27 MiB uncompressed, 13 MiB squashfs; only 13
+   kernel modules / 2.4 MB — just the NIC drivers, everything boot-critical is
+   `=y`). It **will grow**: the TankOS app release, a container runtime
+   (`crun`/`runc` + plumbing), more `=m` modules (GPU/DRM, sound, Wi-Fi, USB4),
+   and the wildcard — **`linux-firmware` blobs** (GPU/Wi-Fi firmware can be tens–
+   hundreds of MB; prune `BR2_PACKAGE_LINUX_FIRMWARE_*` to only what's needed or it
+   dwarfs everything). Realistic landing: **60–150 MiB** rootfs. The 256 MiB slots
+   give ~20× margin now and comfortable room then.
+
+Two partitions feel growth, differently:
+- **rootfs squashfs** grows with `=m` modules + firmware + the app/runtime.
+- **ESP** grows with `=y` drivers (fatter `bzImage`), and the kernel is stored
+  **twice** there (`vmlinuz-a` + `vmlinuz-b`), so built-in additions double in p1.
+
+**Verdict:** leave `fwup.conf` sizes as-is. The only hard constraint is "squashfs
+fits the slot," and the `assert-size-lte = ${ROOTFS_A_PART_COUNT}` guard
+(`fwup.conf`) hard-fails the build the day a slot overflows — so the headroom can
+be tuned later with a safety net, never silently outgrown. If a smaller dev `.img`
+is ever wanted it's the ESP (→ ~48 MiB) and the app-partition minimum (it expands
+on a real `fwup`/`mix burn` anyway) that are trimmable; the rootfs slots are the
+one place to keep generous.
 
 ## Phased roadmap
 

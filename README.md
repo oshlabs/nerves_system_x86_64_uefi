@@ -8,13 +8,14 @@ disk. It is a fork of
 [`nerves-project/nerves_system_x86_64`](https://github.com/nerves-project/nerves_system_x86_64)
 adapted for UEFI boot on real hardware.
 
-See [`PLAN.md`](PLAN.md) for the full design (GPT/ESP layout, kexec-based A/B
-update, the `uefi_ab_chooser`) and the phased roadmap. This is currently at
-**Phase 1: single-slot boot**.
+See [`PLAN.md`](PLAN.md) for the full design (GPT/ESP layout, A/B updates with
+boot-counting rollback via the `uefi_ab_chooser`) and the phased roadmap. Phase 1
+(single-slot boot) and Phase 2 (A/B + boot-counting rollback) are validated on
+QEMU/OVMF and an Intel N100.
 
-> Status: in development on the `feature/uefi-boot` branch. First test target is
-> an Intel N100 mini PC (onboard NVMe, Intel I226 NICs). Secure Boot must be
-> disabled.
+> Status: in development on the `feature/uefi-boot` branch. Test target is an
+> Intel N100 mini PC (onboard NVMe, Intel I226 NICs). Secure Boot must be
+> disabled (deferred).
 
 | Feature              | Description                     |
 | -------------------- | ------------------------------- |
